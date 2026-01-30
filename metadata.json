@@ -1,0 +1,7 @@
+{
+  "name": "SmartMed DroneNet",
+  "description": "AI-powered emergency healthcare delivery system using smart mission planning and drone simulation technology.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
