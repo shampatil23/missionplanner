@@ -59,6 +59,7 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
    const [gpsFix, setGpsFix] = useState<'NO_FIX' | '2D_FIX' | '3D_FIX'>('NO_FIX');
    const [satellites, setSatellites] = useState(0);
    const [hdop, setHdop] = useState(99.9);
+   const [mapReady, setMapReady] = useState(false);
 
    // --- STATE: MISSION ---
    const [missionItems, setMissionItems] = useState<MissionItem[]>([]);
@@ -185,6 +186,7 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
       droneMarkerRef.current = L.marker([CENTRAL_HOSPITAL_LOCATION.lat, CENTRAL_HOSPITAL_LOCATION.lng], { icon: droneIcon, zIndexOffset: 1000 }).addTo(map);
       missionLayerRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
+      setMapReady(true);
    }, []);
 
    // --- MAP DRAWING ---
@@ -227,30 +229,50 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
    // --- MISSION SYNC FROM FIREBASE ---
    useEffect(() => {
       const unsubscribe = subscribeToRequests((requests) => {
-         // Find new dispatched mission
-         const dispatched = requests.find(r => r.status === 'dispatched');
+         // Find current mission (either newly dispatched or already active)
+         // Prioritize dispatched to trigger the auto-start logic
+         let targetReq = requests.find(r => r.status === 'dispatched');
+         if (!targetReq) {
+            targetReq = requests.find(r => r.status === 'active');
+         }
 
-         // Safety: Ignore if we already have this mission active, or if it's completed
-         if (dispatched && dispatched.id !== activeRequest?.id && dispatched.status !== 'completed') {
-            addLog(`MISSION RECEIVED: ${dispatched.hospitalName.toUpperCase()}`, "INFO");
-            setActiveRequest(dispatched);
-            updateRequestStatus(dispatched.id, 'active');
+         if (targetReq && targetReq.id !== activeRequest?.id) {
+            const isNew = targetReq.status === 'dispatched';
+            if (isNew) {
+               addLog(`MISSION RECEIVED: ${targetReq.hospitalName.toUpperCase()}`, "INFO");
+               updateRequestStatus(targetReq.id, 'active');
+            } else {
+               addLog(`RESUMING MISSION: ${targetReq.hospitalName.toUpperCase()}`, "INFO");
+            }
+
+            setActiveRequest(targetReq);
 
             // Parse Mission
-            const start = dispatched.origin || CENTRAL_HOSPITAL_LOCATION;
+            const start = targetReq.origin || CENTRAL_HOSPITAL_LOCATION;
             setHomeLocation(start);
             physics.current.lat = start.lat;
             physics.current.lng = start.lng;
+            physics.current.alt = 0;
+            physics.current.speed = 0;
+            physics.current.heading = getBearing(start.lat, start.lng, targetReq.location.lat, targetReq.location.lng);
 
             const newItems: MissionItem[] = [
                { seq: 1, command: MavCmd.NAV_TAKEOFF, lat: start.lat, lng: start.lng, alt: DEFAULT_ALT },
-               { seq: 2, command: MavCmd.NAV_WAYPOINT, lat: (start.lat + dispatched.location.lat) / 2, lng: (start.lng + dispatched.location.lng) / 2, alt: DEFAULT_ALT },
-               { seq: 3, command: MavCmd.NAV_WAYPOINT, lat: dispatched.location.lat, lng: dispatched.location.lng, alt: DEFAULT_ALT },
-               { seq: 4, command: MavCmd.NAV_LOITER_TIME, lat: dispatched.location.lat, lng: dispatched.location.lng, alt: DEFAULT_ALT, p1: 5 }, // 5s wait
-               { seq: 5, command: MavCmd.NAV_LAND, lat: dispatched.location.lat, lng: dispatched.location.lng, alt: 0 },
+               { seq: 2, command: MavCmd.NAV_WAYPOINT, lat: (start.lat + targetReq.location.lat) / 2, lng: (start.lng + targetReq.location.lng) / 2, alt: DEFAULT_ALT },
+               { seq: 3, command: MavCmd.NAV_WAYPOINT, lat: targetReq.location.lat, lng: targetReq.location.lng, alt: DEFAULT_ALT },
+               { seq: 4, command: MavCmd.NAV_LOITER_TIME, lat: targetReq.location.lat, lng: targetReq.location.lng, alt: DEFAULT_ALT, p1: 5 }, // 5s wait
+               { seq: 5, command: MavCmd.NAV_LAND, lat: targetReq.location.lat, lng: targetReq.location.lng, alt: 0 },
             ];
+
+            setActiveWpIndex(-1);
             setMissionItems(newItems);
             drawMissionOnMap(newItems);
+
+            // Auto-arm and start for better UX
+            if (isNew) {
+               setArmed(true);
+               setFlightMode('AUTO');
+            }
          }
       });
       return () => unsubscribe();
@@ -258,10 +280,10 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
 
    // Redraw when map is ready
    useEffect(() => {
-      if (mapInstanceRef.current && missionItems.length > 0) {
+      if (mapReady && missionItems.length > 0) {
          drawMissionOnMap(missionItems);
       }
-   }, [mapInstanceRef.current, missionItems, drawMissionOnMap]);
+   }, [mapReady, missionItems, drawMissionOnMap]);
 
    // --- PHYSICS LOOP ---
    useEffect(() => {

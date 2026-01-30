@@ -22,8 +22,8 @@ const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDisp
   <div
     onClick={() => onFocus(req.location.lat, req.location.lng)}
     className={`relative border rounded-xl p-4 mb-3 transition-all cursor-pointer group ${isActive
-        ? 'bg-emerald-900/10 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
-        : 'bg-slate-800 border-slate-700 hover:border-slate-500 hover:bg-slate-750'
+      ? 'bg-emerald-900/10 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
+      : 'bg-slate-800 border-slate-700 hover:border-slate-500 hover:bg-slate-750'
       }`}>
     {req.priority === 'Emergency' && (
       <div className="absolute top-2 right-2">
@@ -66,6 +66,13 @@ const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDisp
         <span className="text-emerald-400 text-xs font-bold flex items-center gap-1">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></div>
           ACTIVE MISSION
+        </span>
+      )}
+
+      {req.status === 'completed' && (
+        <span className="text-blue-400 text-xs font-bold flex items-center gap-1">
+          <CheckCircle className="w-3.5 h-3.5" />
+          DELIVERED
         </span>
       )}
     </div>
@@ -227,6 +234,7 @@ export const DispatchDashboard: React.FC = () => {
   const pendingRequests = requests.filter(r => r.status === 'pending');
   // Strict filtering to ensure no completed missions appear in the active list
   const activeRequests = requests.filter(r => (r.status === 'dispatched' || r.status === 'active'));
+  const completedRequests = requests.filter(r => r.status === 'completed');
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-slate-950 overflow-hidden relative">
@@ -265,6 +273,10 @@ export const DispatchDashboard: React.FC = () => {
             <div className="flex-1 bg-emerald-900/20 rounded p-2 text-center border border-emerald-500/20">
               <div className="text-2xl font-bold text-emerald-400">{activeRequests.length}</div>
               <div className="text-[10px] text-emerald-500/70 uppercase">In-Flight</div>
+            </div>
+            <div className="flex-1 bg-blue-900/20 rounded p-2 text-center border border-blue-500/20">
+              <div className="text-2xl font-bold text-blue-400">{completedRequests.length}</div>
+              <div className="text-[10px] text-blue-500/70 uppercase">Done</div>
             </div>
           </div>
         </div>
@@ -306,10 +318,27 @@ export const DispatchDashboard: React.FC = () => {
             </div>
           )}
 
-          {pendingRequests.length === 0 && activeRequests.length === 0 && (
+          {completedRequests.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-xs font-bold text-blue-400 mb-2 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                COMPLETED TASKS
+              </h3>
+              {completedRequests.map(req => (
+                <RequestCard
+                  key={req.id}
+                  req={req}
+                  onDispatch={handleDispatch}
+                  onFocus={panToLocation}
+                />
+              ))}
+            </div>
+          )}
+
+          {pendingRequests.length === 0 && activeRequests.length === 0 && completedRequests.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50 pb-20">
               <Navigation className="w-12 h-12 mb-2 stroke-1" />
-              <p className="text-sm font-medium">No Active Operations</p>
+              <p className="text-sm font-medium">No Operations Found</p>
             </div>
           )}
         </div>
