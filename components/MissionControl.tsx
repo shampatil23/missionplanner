@@ -187,6 +187,43 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
       mapInstanceRef.current = map;
    }, []);
 
+   // --- MAP DRAWING ---
+   const drawMissionOnMap = useCallback((items: MissionItem[]) => {
+      if (!mapInstanceRef.current || !window.L || items.length === 0) return;
+      const L = window.L;
+
+      if (!missionLayerRef.current) {
+         missionLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+      }
+
+      missionLayerRef.current.clearLayers();
+
+      const points = items.map(i => [i.lat, i.lng]);
+
+      // Path Line
+      L.polyline(points, { color: '#fbbf24', weight: 2, dashArray: '5, 5', opacity: 0.8 }).addTo(missionLayerRef.current);
+
+      // Waypoints
+      items.forEach((item) => {
+         const color = item.command === MavCmd.NAV_LAND ? '#ef4444' : item.command === MavCmd.NAV_TAKEOFF ? '#3b82f6' : '#fbbf24';
+         const icon = L.divIcon({
+            html: `<div class="flex flex-col items-center">
+                <div class="w-4 h-4 rounded-full border border-black shadow-sm flex items-center justify-center text-[8px] font-bold text-black" style="background:${color}">${item.seq}</div>
+                <div class="text-[8px] font-bold text-${color === '#fbbf24' ? 'yellow-400' : 'white'} bg-black/70 px-1 rounded mt-0.5">${item.command.replace('NAV_', '')}</div>
+               </div>`,
+            className: 'bg-transparent',
+            iconSize: [40, 40],
+            iconAnchor: [20, 8]
+         });
+         L.marker([item.lat, item.lng], { icon }).addTo(missionLayerRef.current);
+      });
+
+      // Fit Bounds
+      if (points.length > 0) {
+         mapInstanceRef.current.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
+      }
+   }, [mapInstanceRef]);
+
    // --- MISSION SYNC FROM FIREBASE ---
    useEffect(() => {
       const unsubscribe = subscribeToRequests((requests) => {
@@ -225,43 +262,6 @@ export const MissionControl: React.FC<{ viewMode: 'planner' | 'drone' }> = ({ vi
          drawMissionOnMap(missionItems);
       }
    }, [mapInstanceRef.current, missionItems, drawMissionOnMap]);
-
-   // --- MAP DRAWING ---
-   const drawMissionOnMap = useCallback((items: MissionItem[]) => {
-      if (!mapInstanceRef.current || !window.L || items.length === 0) return;
-      const L = window.L;
-
-      if (!missionLayerRef.current) {
-         missionLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
-      }
-
-      missionLayerRef.current.clearLayers();
-
-      const points = items.map(i => [i.lat, i.lng]);
-
-      // Path Line
-      L.polyline(points, { color: '#fbbf24', weight: 2, dashArray: '5, 5', opacity: 0.8 }).addTo(missionLayerRef.current);
-
-      // Waypoints
-      items.forEach((item) => {
-         const color = item.command === MavCmd.NAV_LAND ? '#ef4444' : item.command === MavCmd.NAV_TAKEOFF ? '#3b82f6' : '#fbbf24';
-         const icon = L.divIcon({
-            html: `<div class="flex flex-col items-center">
-                <div class="w-4 h-4 rounded-full border border-black shadow-sm flex items-center justify-center text-[8px] font-bold text-black" style="background:${color}">${item.seq}</div>
-                <div class="text-[8px] font-bold text-${color === '#fbbf24' ? 'yellow-400' : 'white'} bg-black/70 px-1 rounded mt-0.5">${item.command.replace('NAV_', '')}</div>
-               </div>`,
-            className: 'bg-transparent',
-            iconSize: [40, 40],
-            iconAnchor: [20, 8]
-         });
-         L.marker([item.lat, item.lng], { icon }).addTo(missionLayerRef.current);
-      });
-
-      // Fit Bounds
-      if (points.length > 0) {
-         mapInstanceRef.current.fitBounds(L.latLngBounds(points), { padding: [50, 50] });
-      }
-   }, [mapInstanceRef]);
 
    // --- PHYSICS LOOP ---
    useEffect(() => {
