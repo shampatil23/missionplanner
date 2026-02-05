@@ -15,6 +15,9 @@ export enum DroneState {
   EMERGENCY = 'EMERGENCY'
 }
 
+// Multi-Drone Support: Drone availability status
+export type DroneStatus = 'idle' | 'dispatched' | 'running' | 'completed' | 'returning';
+
 export interface Location {
   lat: number;
   lng: number;
@@ -33,6 +36,42 @@ export interface MedicineRequest {
   timestamp: number;
   eta?: number; // in seconds
   batteryRequired?: number;
+  droneId?: string; // Multi-Drone: Assigned drone ID
+}
+
+// Multi-Drone Support: Individual Drone Entity
+export interface Drone {
+  id: string;
+  name: string;
+  status: DroneStatus;
+  currentLocation: Location;
+  assignedTaskId: string | null;
+  assignedRoute: MissionItem[] | null;
+  telemetry: DroneTelemetry;
+  homeLocation: Location;
+  color: string; // For visual distinction on map
+}
+
+// Mission Item for waypoint-based navigation
+export interface MissionItem {
+  seq: number;
+  command: MavCmd;
+  p1?: number;
+  p2?: number;
+  p3?: number;
+  p4?: number;
+  lat: number;
+  lng: number;
+  alt: number;
+}
+
+// MAVLink-style Commands
+export enum MavCmd {
+  NAV_TAKEOFF = 'NAV_TAKEOFF',
+  NAV_WAYPOINT = 'NAV_WAYPOINT',
+  NAV_LOITER_TIME = 'NAV_LOITER',
+  NAV_RETURN_TO_LAUNCH = 'NAV_RTL',
+  NAV_LAND = 'NAV_LAND',
 }
 
 export interface SystemHealth {

@@ -27,6 +27,11 @@ export const updateRequestStatus = (id: string, status: MissionStatus) => {
   return update(requestRef, { status });
 };
 
+export const assignDroneToRequest = (requestId: string, droneId: string) => {
+  const requestRef = ref(db, `requests/${requestId}`);
+  return update(requestRef, { droneId });
+};
+
 export const subscribeToRequests = (callback: (requests: MedicineRequest[]) => void) => {
   return onValue(requestsRef, (snapshot) => {
     const data = snapshot.val();

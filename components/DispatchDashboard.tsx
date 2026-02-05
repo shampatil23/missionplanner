@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MedicineRequest, CENTRAL_HOSPITAL_LOCATION } from '../types';
-import { subscribeToRequests, updateRequestStatus, requestsRef } from '../services/firebase';
+import { MedicineRequest, CENTRAL_HOSPITAL_LOCATION, MissionItem, MavCmd } from '../types';
+import { subscribeToRequests, updateRequestStatus, requestsRef, assignDroneToRequest } from '../services/firebase';
 import { update } from "firebase/database";
 import { Package, Clock, MapPin, AlertCircle, PlaneTakeoff, CheckCircle, Navigation, LayoutDashboard, Crosshair } from 'lucide-react';
+import { useDrones } from '../contexts/DroneContext';
 
 // Leaflet type declaration
 declare global {
@@ -16,9 +17,10 @@ interface RequestCardProps {
   isActive?: boolean;
   onDispatch: (id: string) => void;
   onFocus: (lat: number, lng: number) => void;
+  assignedDroneName?: string;
 }
 
-const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDispatch, onFocus }) => (
+const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDispatch, onFocus, assignedDroneName }) => (
   <div
     onClick={() => onFocus(req.location.lat, req.location.lng)}
     className={`relative border rounded-xl p-4 mb-3 transition-all cursor-pointer group ${isActive
@@ -39,6 +41,11 @@ const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDisp
         <p className="text-slate-500 text-[10px] flex items-center gap-1 mt-0.5 font-mono">
           ID: {req.id.slice(-4).toUpperCase()}
         </p>
+        {assignedDroneName && (
+          <p className="text-emerald-400 text-[10px] flex items-center gap-1 mt-0.5 font-mono">
+            🚁 {assignedDroneName}
+          </p>
+        )}
       </div>
     </div>
 
@@ -79,10 +86,25 @@ const RequestCard: React.FC<RequestCardProps> = ({ req, isActive = false, onDisp
   </div>
 );
 
+// Helper to generate route for a task
+const generateRouteForTask = (start: { lat: number; lng: number }, destination: { lat: number; lng: number }): MissionItem[] => {
+  const DEFAULT_ALT = 100;
+  return [
+    { seq: 1, command: MavCmd.NAV_TAKEOFF, lat: start.lat, lng: start.lng, alt: DEFAULT_ALT },
+    { seq: 2, command: MavCmd.NAV_WAYPOINT, lat: (start.lat + destination.lat) / 2, lng: (start.lng + destination.lng) / 2, alt: DEFAULT_ALT },
+    { seq: 3, command: MavCmd.NAV_WAYPOINT, lat: destination.lat, lng: destination.lng, alt: DEFAULT_ALT },
+    { seq: 4, command: MavCmd.NAV_LOITER_TIME, lat: destination.lat, lng: destination.lng, alt: DEFAULT_ALT, p1: 5 },
+    { seq: 5, command: MavCmd.NAV_LAND, lat: destination.lat, lng: destination.lng, alt: 0 },
+  ];
+};
+
 export const DispatchDashboard: React.FC = () => {
   const [requests, setRequests] = useState<MedicineRequest[]>([]);
   const [hubLocation, setHubLocation] = useState(CENTRAL_HOSPITAL_LOCATION);
   const [mapReady, setMapReady] = useState(false);
+
+  // Multi-Drone Context
+  const { drones, getAvailableDrone, assignTaskToDrone, getDroneByTaskId } = useDrones();
 
   // Refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -218,10 +240,29 @@ export const DispatchDashboard: React.FC = () => {
 
 
   const handleDispatch = (id: string) => {
-    // Include the CURRENT Hub Location as the 'origin' in the request
+    // Get available drone
+    const availableDrone = getAvailableDrone();
+
+    if (!availableDrone) {
+      alert('No drones available! All drones are currently assigned to tasks.');
+      return;
+    }
+
+    // Find the request
+    const request = requests.find(r => r.id === id);
+    if (!request) return;
+
+    // Generate route for this task
+    const route = generateRouteForTask(hubLocation, request.location);
+
+    // Assign drone to task in context
+    assignTaskToDrone(availableDrone.id, request, route);
+
+    // Update Firebase with drone assignment and status
     const reqRef = update(requestsRef, {
       [`${id}/status`]: 'dispatched',
-      [`${id}/origin`]: hubLocation
+      [`${id}/origin`]: hubLocation,
+      [`${id}/droneId`]: availableDrone.id
     });
   };
 
@@ -255,6 +296,24 @@ export const DispatchDashboard: React.FC = () => {
           </p>
           <div className="mt-2 text-[10px] font-mono text-slate-500 bg-black/50 p-1.5 rounded border border-slate-800 pointer-events-auto select-all">
             HUB: {hubLocation.lat.toFixed(5)}, {hubLocation.lng.toFixed(5)}
+          </div>
+
+          {/* Drone Fleet Status */}
+          <div className="mt-3 pt-3 border-t border-slate-700">
+            <h3 className="text-[10px] font-bold text-slate-400 mb-2">DRONE FLEET STATUS</h3>
+            <div className="space-y-1">
+              {Array.from(drones.values()).map(drone => (
+                <div key={drone.id} className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-300">{drone.name}</span>
+                  <span className={`font-bold ${drone.status === 'idle' ? 'text-green-400' :
+                    drone.status === 'running' ? 'text-blue-400' :
+                      'text-yellow-400'
+                    }`}>
+                    {drone.status.toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -306,15 +365,19 @@ export const DispatchDashboard: React.FC = () => {
                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
                 ACTIVE MISSIONS
               </h3>
-              {activeRequests.map(req => (
-                <RequestCard
-                  key={req.id}
-                  req={req}
-                  isActive
-                  onDispatch={handleDispatch}
-                  onFocus={panToLocation}
-                />
-              ))}
+              {activeRequests.map(req => {
+                const assignedDrone = req.droneId ? drones.get(req.droneId) : null;
+                return (
+                  <RequestCard
+                    key={req.id}
+                    req={req}
+                    isActive
+                    onDispatch={handleDispatch}
+                    onFocus={panToLocation}
+                    assignedDroneName={assignedDrone?.name}
+                  />
+                );
+              })}
             </div>
           )}
 

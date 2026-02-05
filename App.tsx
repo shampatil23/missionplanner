@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { RequestForm } from './components/RequestForm';
 import { DispatchDashboard } from './components/DispatchDashboard';
 import { MissionControl } from './components/MissionControl';
+import { DroneProvider } from './contexts/DroneContext';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState('dispatch');
@@ -23,23 +24,25 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans">
-      <Sidebar currentView={currentView} onChangeView={setCurrentView} />
-      
-      <main className="flex-1 ml-64 h-full relative">
-        {/* Background Grid Pattern for Technical Look */}
-        <div className="absolute inset-0 z-0 opacity-5 pointer-events-none" 
-             style={{ 
-               backgroundImage: 'radial-gradient(circle, #334155 1px, transparent 1px)', 
-               backgroundSize: '24px 24px' 
-             }}>
-        </div>
+    <DroneProvider>
+      <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans">
+        <Sidebar currentView={currentView} onChangeView={setCurrentView} />
 
-        <div className="relative z-10 h-full">
-          {renderContent()}
-        </div>
-      </main>
-    </div>
+        <main className="flex-1 ml-64 h-full relative">
+          {/* Background Grid Pattern for Technical Look */}
+          <div className="absolute inset-0 z-0 opacity-5 pointer-events-none"
+            style={{
+              backgroundImage: 'radial-gradient(circle, #334155 1px, transparent 1px)',
+              backgroundSize: '24px 24px'
+            }}>
+          </div>
+
+          <div className="relative z-10 h-full">
+            {renderContent()}
+          </div>
+        </main>
+      </div>
+    </DroneProvider>
   );
 };
 
